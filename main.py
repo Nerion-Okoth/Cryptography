@@ -1,112 +1,141 @@
-import tkinter as tk
-from tkinter import messagebox
-from cryptography.fernet import Fernet
 import random
+import tkinter as tk
+from tkinter import ttk
+from ttkbootstrap import Style
+from ttkbootstrap.constants import *
+from cryptography.fernet import Fernet
 import requests
-import os
 
-# --- CONFIGURE THESE FOR INFOBIP ---
-INFOBIP_API_KEY = '9e20d79a6156c0c13347f798559edbb4-4a1530a6-de25-4822-999b-18c6c5a7cf08'
-INFOBIP_SENDER = 'InfoSMS'
-DESTINATION_PHONE = '+254768273937'
-
-# --- UTILS ---
-
-def generate_key():
-    key = Fernet.generate_key()
-    with open("keys.key", "wb") as key_file:
-        key_file.write(key)
-
+# Load key (or generate a new one)
 def load_key():
-    return open("keys.key", "rb").read()
+    try:
+        with open("secret.key", "rb") as key_file:
+            return key_file.read()
+    except FileNotFoundError:
+        key = Fernet.generate_key()
+        with open("secret.key", "wb") as key_file:
+            key_file.write(key)
+        return key
 
+# Encrypt message
 def encrypt_message(message, key):
-    f = Fernet(key)
-    encrypted = f.encrypt(message.encode())
-    return encrypted
+    return Fernet(key).encrypt(message.encode()).decode()
 
-def decrypt_message(encrypted, key):
-    f = Fernet(key)
-    decrypted = f.decrypt(encrypted)
-    return decrypted.decode()
+# Decrypt message
+def decrypt_message(encrypted_message, key):
+    return Fernet(key).decrypt(encrypted_message.encode()).decode()
 
-def send_otp_infobip(phone, otp):
-    url = "https://api.infobip.com/sms/2/text/advanced"
+# Save encrypted message to file
+def save_encrypted(encrypted_text):
+    with open("encrypted.txt", "w") as f:
+        f.write(encrypted_text)
+
+# Load encrypted message
+def load_encrypted():
+    with open("encrypted.txt", "r") as f:
+        return f.read()
+
+# Send OTP with Infobip using REST API
+def send_otp_infobip(phone_number, otp):
+    API_KEY = "9e20d79a6156c0c13347f798559edbb4-4a1530a6-de25-4822-999b-18c6c5a7cf08"  # 🔁 Replace this
+    BASE_URL = "https://lqyv5d.api.infobip.com"  # 🔁 Replace this
+
+    url = f"{BASE_URL}/sms/2/text/advanced"
     headers = {
-        "Authorization": f"App {INFOBIP_API_KEY}",
-        "Content-Type": "application/json"
+        "Authorization": f"App {API_KEY}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
     }
     payload = {
         "messages": [
             {
-                "from": INFOBIP_SENDER,
-                "destinations": [{"to": phone}],
+                "from": "InfoSMS",
+                "destinations": [{"to": phone_number}],
                 "text": f"Your OTP is: {otp}"
             }
         ]
     }
-    response = requests.post(url, headers=headers, json=payload)
-    return response.status_code, response.text
 
-# --- GUI SETUP ---
-root = tk.Tk()
-root.title("Secure Message Encryptor")
-root.geometry("500x400")
-otp_global = ""
+    response = requests.post(url, json=payload, headers=headers)
+    response.raise_for_status()  # Raises error if request fails
+    return response
 
-def encrypt_action():
-    global otp_global
+# Encrypt & Send OTP
+def encrypt_and_send():
     message = message_input.get("1.0", tk.END).strip()
-    if not message:
-        messagebox.showwarning("Input Error", "Please enter a message to encrypt.")
-        return
+    phone = phone_input.get().strip()
 
-    if not os.path.exists("keys.key"):
-        generate_key()
+    if not message or not phone:
+        output_label.config(text="Please enter message and phone number!", bootstyle="danger")
+        return
 
     key = load_key()
     encrypted = encrypt_message(message, key)
+    save_encrypted(encrypted)
 
-    with open("encrypted.txt", "wb") as file:
-        file.write(encrypted)
+    otp = str(random.randint(100000, 999999))
+    with open("otp.txt", "w") as f:
+        f.write(otp)
 
-    otp_global = str(random.randint(100000, 999999))
-    with open("otp.txt", "w") as file:
-        file.write(otp_global)
+    try:
+        send_otp_infobip(phone, otp)
+        output_label.config(text="Message encrypted & OTP sent!", bootstyle="success")
+    except Exception as e:
+        output_label.config(text=f"Failed to send OTP: {e}", bootstyle="danger")
 
-    # Send OTP
-    status, res = send_otp_infobip(DESTINATION_PHONE, otp_global)
-    if status == 200:
-        messagebox.showinfo("Success", "Message encrypted and OTP sent to your phone.")
-    else:
-        messagebox.showerror("Error", f"Failed to send OTP: {res}")
+# Decrypt Message
+def decrypt():
+    user_otp = otp_input.get().strip()
+    try:
+        with open("otp.txt", "r") as f:
+            correct_otp = f.read()
+    except FileNotFoundError:
+        output_label.config(text="OTP not found. Send message first.", bootstyle="danger")
+        return
 
-def decrypt_action():
-    otp_entered = otp_entry.get()
-    if otp_entered != otp_global:
-        messagebox.showerror("Invalid OTP", "The OTP you entered is incorrect.")
+    if user_otp != correct_otp:
+        output_label.config(text="Incorrect OTP!", bootstyle="danger")
         return
 
     try:
+        encrypted = load_encrypted()
         key = load_key()
-        with open("encrypted.txt", "rb") as file:
-            encrypted = file.read()
         decrypted = decrypt_message(encrypted, key)
-        messagebox.showinfo("Decrypted Message", decrypted)
+        output_label.config(text=f"Decrypted: {decrypted}", bootstyle="success")
     except Exception as e:
-        messagebox.showerror("Decryption Failed", f"Error: {str(e)}")
+        output_label.config(text=f"Error decrypting: {e}", bootstyle="danger")
 
-# --- GUI WIDGETS ---
-tk.Label(root, text="Enter Message to Encrypt:").pack(pady=5)
+# ---------- GUI Setup ----------
+style = Style("superhero")
+root = style.master
+root.title("🔐 Secure Message Encryptor")
+root.geometry("500x500")
+
+# Message Input
+ttk.Label(root, text="Enter Message:", bootstyle="info").pack(pady=(20, 5))
 message_input = tk.Text(root, height=5, width=50)
-message_input.pack(pady=5)
+message_input.pack()
 
-tk.Button(root, text="Encrypt & Send OTP", command=encrypt_action).pack(pady=10)
+# Phone Number
+ttk.Label(root, text="Recipient Phone (e.g. +2547...):", bootstyle="info").pack(pady=(15, 5))
+phone_input = ttk.Entry(root, width=40)
+phone_input.pack()
 
-tk.Label(root, text="Enter OTP:").pack()
-otp_entry = tk.Entry(root)
-otp_entry.pack(pady=5)
+# Encrypt & Send OTP Button
+ttk.Button(root, text="Encrypt & Send OTP", bootstyle="primary", command=encrypt_and_send).pack(pady=20)
 
-tk.Button(root, text="Decrypt Message", command=decrypt_action).pack(pady=20)
+# OTP Input
+ttk.Label(root, text="Enter OTP:", bootstyle="info").pack()
+otp_input = ttk.Entry(root, width=20)
+otp_input.pack()
 
+# Decrypt Button
+ttk.Button(root, text="Decrypt Message", bootstyle="success", command=decrypt).pack(pady=20)
+
+# Output Label
+output_label = ttk.Label(root, text="", bootstyle="warning")
+output_label.pack(pady=10)
+
+# Run the app
 root.mainloop()
+

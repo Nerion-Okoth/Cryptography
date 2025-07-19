@@ -37,8 +37,8 @@ def load_encrypted():
 
 # Send OTP with Infobip using REST API
 def send_otp_infobip(phone_number, otp):
-    API_KEY = "9e20d79a6156c0c13347f798559edbb4-4a1530a6-de25-4822-999b-18c6c5a7cf08"  # 🔁 Replace this
-    BASE_URL = "https://lqyv5d.api.infobip.com"  # 🔁 Replace this
+    API_KEY = "9e20d79a6156c0c13347f798559edbb4-4a1530a6-de25-4822-999b-18c6c5a7cf08"  
+    BASE_URL = "https://lqyv5d.api.infobip.com"  
 
     url = f"{BASE_URL}/sms/2/text/advanced"
     headers = {
